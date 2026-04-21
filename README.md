@@ -51,18 +51,18 @@ from claims_system_clean import ClaimsCoverageSystem
 
 # Initialize system
 system = ClaimsCoverageSystem()
-system.ensure_data_loadedx()
+system.ensure_data_loaded()
 
 # Process single claim
-result = system.process_claims("claim_id")
+result = system.process_claim("CLM-1001")
 
 # Process multiple claims
-results = system.process_claims(["id1", "id2", "id3"])
+results = system.process_claims(["CLM-1001", "CLM-1002", "CLM-1003"])
 
 # Process first N claims (testing)
 results = system.process_claims(5)
 
-# Process all claims (production)
+# Process all claims
 results = system.process_claims()
 ```
 
