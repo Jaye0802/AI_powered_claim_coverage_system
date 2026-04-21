@@ -1,110 +1,239 @@
-# BriteCore Claims Coverage Assessment System
+# AI agents Claims Coverage System — Technical Documentation
 
-A streamlined AI-powered claims assessment system that processes insurance claims efficiently and flexibly with comprehensive monitoring and validation.
+## Overview
 
-## Features
+This document provides a comprehensive, implementation-oriented overview of the Claims Coverage System. It is intended for developers, ML engineers, analysts, and operators. It explains system responsibilities, architecture, data flow, configuration, AI integration, data model, runtime behaviors, validation, testing, and operational playbooks.
 
-- **Smart Data Import**: Only imports Excel data when needed (file has changed)
-- **Flexible Processing**: Process single claims, multiple claims, or all claims
-- **AI Agent Analysis**: Objective claim assessment without pre-determined outcomes
-- **Clean Architecture**: Well-commented, maintainable code
-- **Robust Error Handling**: Graceful fallbacks when AI analysis fails
-- **Performance Optimized**: Database indexes and efficient data processing
-- **Data Validation**: Comprehensive data quality checking
-- **Performance Monitoring**: Real-time performance tracking and optimization
+## 1. Executive Summary
 
-## Quick Start
+The Claims Coverage System ingests structured policy, claim, and coverage data from an Excel workbook (for test only: **BklSQL_valid.xlsx, BklSQL_invalid.xlsx**), normalizes it into an embedded **SQLite** database, and uses a structured-output LLM (OpenAI) to produce coverage determinations and estimated payouts for claims.
 
-1. **Manual Setup**:
-```bash
-pip install -r requirements.txt
-```
+The system enforces schema conformity via Pydantic (strict JSON schemas) and exposes ergonomic entry points to process individual claims or batches. It includes preflight data validation and lightweight performance diagnostics.
 
-2. **Add your OpenAI API key to `.env`**:
-```
-OPENAI_API_KEY=your_api_key_here
-```
+### Key Strengths
 
-3. **Run the system**:
-```bash
-python claims_system_clean.py
-```
+- Clear separation of concerns:
+    - **Data Adapter** (I/O + DB)
+    - **Coverage Agent** (LLM + validation)
+    - **System Orchestrator** (end-to-end flow)
+- Deterministic, schema-constrained AI outputs
+- Idempotent Excel import with change detection
+- Portable SQLite-based architecture
 
-## System Architecture
+### Key Risks
 
-### Core Files
-- **`claims_system_clean.py`** - Main system with AI agent and database handling
-- **`config.py`** - Configuration settings and defaults
-- **`requirements.txt`** - Python package dependencies
+- Non-atomic imports (risk of empty DB)
+- OpenAI JSON schema compatibility issues
+- Missing FK enforcement in SQLite
+- Lack of persisted audit trail
 
-### Utility Files
-- **`data_validator.py`** - Data quality validation and integrity checks
-- **`performance_monitor.py`** - Performance monitoring and benchmarking
-- **`test_claims_system.py`** - Comprehensive test suite with mock AI mode
+## 2. Repository Layout
 
-
-## Usage Examples
-
-### Basic Usage
 ```python
-from claims_system_clean import ClaimsCoverageSystem
-
-# Initialize system
-system = ClaimsCoverageSystem()
-system.ensure_data_loaded()
-
-# Process single claim
-result = system.process_claim("CLM-1001")
-
-# Process multiple claims
-results = system.process_claims(["CLM-1001", "CLM-1002", "CLM-1003"])
-
-# Process first N claims (testing)
-results = system.process_claims(5)
-
-# Process all claims
-results = system.process_claims()
+claims_system_clean.py # Core runtime (data + LLM + orchestration)
+config.py # Configuration
+data_validator.py # Data validation
+performance_monitor.py # Performance tracking
+test_claims_system.py # Tests
+requirements.txt # Dependencies
+README.md # Developer guide
+BklSQL.xlsx # Input data
 ```
+
+## 3. Architecture
+
+### Core Components
+
+### 1. BCDataAdapter
+
+- Handles SQLite schema + connections
+- Imports Excel → normalized tables:
+    - `policies`
+    - `claims`
+    - `coverages`
+    - `import_log`
+- Provides typed data access
+
+### 2. ClaimsCoverageAgent
+
+- Handles LLM interaction
+- Enforces structured JSON output
+- Uses Pydantic schemas:
+    - `CoverageAnalysis`
+    - `ClaimAssessment`
+
+### 3. ClaimsCoverageSystem
+
+- Orchestrates full pipeline:
+    1. Ensure data loaded
+    2. Select claims
+    3. Query policy + coverages
+    4. Call LLM
+    5. Compute payout
+    6. Return structured results
+
+### Data Flow
+
+```
+Excel → DataAdapter → SQLite → Orchestrator → LLM → Output
+```
+
+## 4. Data Model (SQLite)
+
+### Tables
+
+- **policies**
+- **claims**
+- **coverages**
+- **import_log**
+
+### Key Relationship
+
+```
+claims.policy_id → policies.policy_id
+```
+
+### Notes
+
+- Add `PRAGMA foreign_keys=ON`
+- Add indexes for performance
+- Consider `policy_terms` table for multi-term policies
+
+## 5. Import Pipeline
+
+1. Check if import is needed (via file mtime)
+2. If needed:
+    - Read Excel
+    - Preprocess data
+    - Load into DB
+
+### Recommended Improvement
+
+Use transactional import:
+
+```
+BEGIN → temp tables → validate → swap → COMMIT
+```
+
+## 6. AI Inference
+
+### Prompting
+
+- Input: policy + claim + coverages
+- Output: structured JSON
+
+### Output Enforcement
+
+- Primary: `json_schema`
+- Fallback: `json_object`
+
+### Determinism
+
+- `temperature = 0`
+- optional `seed`
+
+## 7. Configuration
+
+Located in `config.py`
+
+```python
+AI_SEED = 42
+AI_TEMPERATURE = 0
+DATABASE_PATH = "bc_real.db"
+DEFAULT_MODEL = "gpt-4o"
+EXCEL_PATH = "BklSQL.xlsx"
+EXCEL_SHEET = "PoliciesNClaims"
+```
+
+### Secrets
+
+- `OPENAI_API_KEY` via environment variable
+
+## 8. Usage
+
+### Single Claim
+
+```python
+sys = ClaimsCoverageSystem()
+result = sys.process_claim("CLM-001234")
+```
+
+### Batch
+
+```python
+df = sys.process_claims(50)
+```
+
+### All Claims
+
+```python
+df = sys.process_claims("all")
+```
+
+## 9. Validation & Testing
 
 ### Data Validation
 
-The system includes a validation module (`data_validator.py`) to:
-- check schema consistency
-- validate date ranges and data types
-- detect missing or inconsistent fields
+- Schema checks
+- Referential integrity
+- Date validation
+
+### Tests
+
+- Single claim
+- Batch processing
+- Determinism
+
+## 10. Performance
+
+Tracked via `performance_monitor.py`
+
+Metrics:
+
+- latency per claim
+- batch throughput
+- import time
+
+## 11. Security
+
+- Use env variables for API keys
+- Avoid hardcoding secrets
+- Consider encryption
+- Add audit trail
+
+## 12. Roadmap
+
+- Atomic imports
+- Better JSON fallback
+- Persist results to DB
+- Add caching
+- CLI improvements
+
+## 13. Limitations
+
+- LLM dependency
+- Excel schema drift
+- No atomic import (currently)
+- FK not enforced by default
+
+## 14. Setup
 
 ```bash
-python data_validator.py
+pip install -r requirements.txt
+export OPENAI_API_KEY=...
+python claims_system_clean.py
 ```
 
+## 15. Code Structure
 
-### Performance Monitoring
-```bash
-python performance_monitor.py
-```
+### Main Classes
 
-### Run Tests
-```bash
-python test_claims_system.py
-```
+- `BCDataAdapter`
+- `ClaimsCoverageAgent`
+- `ClaimsCoverageSystem`
 
-## Configuration
+### Supporting Modules
 
-All settings are centralized in `config.py`:
-
-```python
-# Database settings
-# Place this input file `BklSQL.xlsx` in the project root directory before running the system
-DATABASE_PATH = "bt_real.db"
-EXCEL_PATH = "BklSQL.xlsx" 
-
-# AI settings
-DEFAULT_MODEL = "gpt-4o"
-AI_TEMPERATURE = 0
-
-# Processing settings
-DEFAULT_TEST_CLAIMS = 3
-BATCH_SIZE = 100
-```
-
-
+- `data_validator.py`
+- `performance_monitor.py`
+- `test_claims_system.py`
